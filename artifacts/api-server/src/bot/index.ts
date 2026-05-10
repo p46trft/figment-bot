@@ -34,6 +34,21 @@ function isAuthorized(message: Message): boolean {
   );
 }
 
+// Deduplication guard — prevents the same message being handled twice
+// (e.g. discord.js partial-channel re-emits, or accidental double startBot calls)
+const processedIds = new Set<string>();
+const MAX_PROCESSED = 5000;
+
+function markProcessed(id: string): boolean {
+  if (processedIds.has(id)) return false;
+  if (processedIds.size >= MAX_PROCESSED) {
+    const first = processedIds.values().next().value;
+    if (first !== undefined) processedIds.delete(first);
+  }
+  processedIds.add(id);
+  return true;
+}
+
 export function startBot(): void {
   const token = process.env["DISCORD_BOT_TOKEN"];
   if (!token) {
@@ -80,6 +95,9 @@ export function startBot(): void {
 
     const handler = commands.get(commandName);
     if (!handler) return;
+
+    // Deduplicate — skip if this exact message was already handled
+    if (!markProcessed(message.id)) return;
 
     // Role authorization check
     if (!isAuthorized(message)) {
