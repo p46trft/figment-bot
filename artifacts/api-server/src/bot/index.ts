@@ -10,6 +10,30 @@ import { createGeminiClient } from "./gemini";
 import { commands } from "./commands";
 import { logger } from "../lib/logger";
 
+function isAuthorized(message: Message): boolean {
+  const botOwnerId = process.env["BOT_OWNER_ID"];
+  const requiredRole = process.env["REQUIRED_ROLE"]?.trim().toLowerCase();
+
+  // If no role restriction is configured, allow everyone
+  if (!requiredRole) return true;
+
+  const userId = message.author.id;
+
+  // Bot owner always passes
+  if (botOwnerId && userId === botOwnerId) return true;
+
+  // Outside of a guild (DMs) — only bot owner allowed when role restriction is active
+  if (!message.guild || !message.member) return false;
+
+  // Server owner always passes
+  if (userId === message.guild.ownerId) return true;
+
+  // Check if the member has the required role (match by name or ID, case-insensitive)
+  return message.member.roles.cache.some(
+    (r) => r.name.toLowerCase() === requiredRole || r.id === requiredRole
+  );
+}
+
 export function startBot(): void {
   const token = process.env["DISCORD_BOT_TOKEN"];
   if (!token) {
@@ -56,6 +80,18 @@ export function startBot(): void {
 
     const handler = commands.get(commandName);
     if (!handler) return;
+
+    // Role authorization check
+    if (!isAuthorized(message)) {
+      await message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor(0xff0000)
+            .setDescription("You don't have the required role to use this bot."),
+        ],
+      });
+      return;
+    }
 
     const guildName = message.guild?.name ?? "DM";
     logger.info({ guildName, user: message.author.username, command: commandName }, "Command received");
